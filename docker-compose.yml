@@ -1,0 +1,88 @@
+version: "3.9"
+
+services:
+  # -----------------------------------------
+  # PostgreSQL 16
+  # -----------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    container_name: bunker_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bunker_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bunker_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-bunker_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bunker_user} -d ${POSTGRES_DB:-bunker_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    ports:
+      - "5432:5432"
+    networks:
+      - bunker_net
+
+  # -----------------------------------------
+  # Redis 7
+  # -----------------------------------------
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    container_name: bunker_redis
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "6379:6379"
+    networks:
+      - bunker_net
+
+  # -----------------------------------------
+  # Bot Application
+  # -----------------------------------------
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    restart: unless-stopped
+    container_name: bunker_bot
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-bunker_user}:${POSTGRES_PASSWORD:-bunker_pass}@postgres:5432/${POSTGRES_DB:-bunker_db}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - bunker_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  bunker_net:
+    driver: bridge

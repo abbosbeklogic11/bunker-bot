@@ -1,0 +1,9 @@
+services:
+  - type: worker
+    name: bunker-game-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m bot.main
+    envVars:
+      - key: BOT_TOKEN
+        sync: false

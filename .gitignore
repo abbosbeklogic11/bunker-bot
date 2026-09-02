@@ -1,0 +1,11 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+.env
+bunker.db
+bunker.db-wal
+bunker.db-shm
+.DS_Store
+.idea/
+.vscode/

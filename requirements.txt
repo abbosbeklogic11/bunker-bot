@@ -1,0 +1,16 @@
+aiogram==3.13.1
+aiohttp==3.10.10
+asyncpg==0.29.0
+redis==5.0.8
+apscheduler==3.10.4
+pydantic==2.8.2
+pydantic-settings==2.5.2
+alembic==1.13.2
+sqlalchemy[asyncio]==2.0.35
+greenlet==3.1.0
+python-dotenv==1.0.1
+loguru==0.7.2
+uvloop==0.21.0; sys_platform != 'win32'
+watchfiles==0.24.0
+pytest==8.3.3
+pytest-asyncio==0.24.0
