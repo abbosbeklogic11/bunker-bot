@@ -129,3 +129,113 @@ class UserRepository:
     async def get_admin_count(self) -> int:
         async with self._pool.acquire() as conn:
             return await conn.fetchval("SELECT COUNT(*) FROM users WHERE is_admin = 1;") or 0
+
+    # ==================== REFERRAL SYSTEM ====================
+
+    async def record_referral(
+        self,
+        referrer_id: int,
+        referred_id: int,
+        bonus_coins: int = 50,
+        bonus_diamonds: int = 10,
+        newcomer_bonus_coins: int = 30
+    ) -> bool:
+        """Records a new referral, rewarding the referrer and the newcomer."""
+        if referrer_id == referred_id:
+            return False
+
+        async with self._pool.acquire() as conn:
+            # Check if newcomer already has a recorded referrer
+            existing = await conn.fetchval("SELECT id FROM referrals WHERE referred_id = $1;", referred_id)
+            if existing:
+                return False
+
+            # Insert referral record
+            await conn.execute(
+                """
+                INSERT INTO referrals (referrer_id, referred_id, bonus_coins, bonus_diamonds)
+                VALUES ($1, $2, $3, $4);
+                """,
+                referrer_id, referred_id, bonus_coins, bonus_diamonds
+            )
+
+            # Reward referrer
+            await conn.execute(
+                "UPDATE users SET coins = coins + $1, diamonds = diamonds + $2, updated_at = NOW() WHERE id = $3;",
+                bonus_coins, bonus_diamonds, referrer_id
+            )
+
+            # Reward newcomer
+            await conn.execute(
+                "UPDATE users SET coins = coins + $1, updated_at = NOW() WHERE id = $2;",
+                newcomer_bonus_coins, referred_id
+            )
+            return True
+
+    async def get_referral_stats(self, user_id: int) -> Dict[str, Any]:
+        """Returns referral statistics for a user."""
+        async with self._pool.acquire() as conn:
+            count = await conn.fetchval("SELECT COUNT(*) FROM referrals WHERE referrer_id = $1;", user_id) or 0
+            earned_coins = await conn.fetchval("SELECT COALESCE(SUM(bonus_coins), 0) FROM referrals WHERE referrer_id = $1;", user_id) or 0
+            earned_diamonds = await conn.fetchval("SELECT COALESCE(SUM(bonus_diamonds), 0) FROM referrals WHERE referrer_id = $1;", user_id) or 0
+            return {
+                "total_referrals": count,
+                "earned_coins": earned_coins,
+                "earned_diamonds": earned_diamonds
+            }
+
+    # ==================== SHOP / INVENTORY SYSTEM ====================
+
+    async def buy_inventory_item(self, user_id: int, item_code: str, item_name: str, cost: int) -> Dict[str, Any]:
+        """Buys an item from the shop, deducting coins if user has enough balance."""
+        user = await self.get_by_id(user_id)
+        if not user:
+            return {"success": False, "error": "USER_NOT_FOUND"}
+
+        if user.coins < cost:
+            return {"success": False, "error": "INSUFFICIENT_FUNDS", "user_coins": user.coins, "cost": cost}
+
+        async with self._pool.acquire() as conn:
+            # Deduct coins
+            await conn.execute(
+                "UPDATE users SET coins = coins - $1, updated_at = NOW() WHERE id = $2;",
+                cost, user_id
+            )
+            # Add to inventory
+            await conn.execute(
+                """
+                INSERT INTO user_inventory (user_id, item_code, item_name, quantity)
+                VALUES ($1, $2, $3, 1);
+                """,
+                user_id, item_code, item_name
+            )
+
+        new_user = await self.get_by_id(user_id)
+        return {"success": True, "new_balance": new_user.coins if new_user else 0}
+
+    async def get_user_inventory(self, user_id: int) -> List[Dict[str, Any]]:
+        """Returns all purchased items currently in user's inventory."""
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM user_inventory WHERE user_id = $1 AND quantity > 0 ORDER BY id ASC;",
+                user_id
+            )
+            return [dict(r) for r in rows]
+
+    async def consume_inventory_item(self, user_id: int, item_code: str) -> bool:
+        """Consumes 1 quantity of an inventory item during game usage."""
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT id, quantity FROM user_inventory WHERE user_id = $1 AND item_code = $2 AND quantity > 0 LIMIT 1;",
+                user_id, item_code
+            )
+            if not row:
+                return False
+            
+            inv_id = row["id"]
+            qty = row["quantity"]
+            if qty > 1:
+                await conn.execute("UPDATE user_inventory SET quantity = quantity - 1 WHERE id = $1;", inv_id)
+            else:
+                await conn.execute("DELETE FROM user_inventory WHERE id = $1;", inv_id)
+            return True

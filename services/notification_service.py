@@ -39,6 +39,9 @@ class NotificationService:
         event_bus.subscribe(GameEventType.DUEL_STARTED, self.on_duel_started)
         event_bus.subscribe(GameEventType.EVENT_TRIGGERED, self.on_event_triggered)
         event_bus.subscribe(GameEventType.WINNER_DETERMINED, self.on_winner_determined)
+        event_bus.subscribe(GameEventType.VOTE_SUBMITTED, self.on_vote_submitted)
+
+    _voting_messages: dict = {}
 
     async def _mute_chat(self, chat_id: int) -> None:
         """Mutes group chat during voting phase."""
@@ -258,7 +261,8 @@ class NotificationService:
                 f"<i>O'zingiz nomzod deb bilgan o'yinchining tugmasini bosing:</i>"
             )
             try:
-                await self.bot.send_message(game.group_chat_id, msg, reply_markup=kb, parse_mode="HTML")
+                sent = await self.bot.send_message(game.group_chat_id, msg, reply_markup=kb, parse_mode="HTML")
+                self._voting_messages[game_id] = sent.message_id
             except Exception:
                 pass
 
@@ -275,6 +279,43 @@ class NotificationService:
                 pass
 
         await self._update_group_dashboard(game_id)
+
+    async def on_vote_submitted(self, event: GameEvent) -> None:
+        """Dynamically updates the group voting message with live vote counts."""
+        game_id = event.game_id
+        data = event.data
+        vote_counts = data.get("vote_counts", {})
+        voted_count = data.get("voted_count", 0)
+        alive_count = data.get("alive_count", 0)
+
+        msg_id = self._voting_messages.get(game_id)
+        game = await self.game_engine.game_repo.get_by_id(game_id)
+        if not game or not msg_id:
+            return
+
+        alive_players = await self.game_engine.player_repo.get_alive_players(game_id)
+        alive_data = []
+        for p in alive_players:
+            u = await self.game_engine.user_repo.get_by_id(p.user_id)
+            alive_data.append({"user_id": p.user_id, "name": u.first_name if u else f"O'yinchi #{p.user_id}"})
+
+        kb = get_voting_keyboard(game_id, alive_data, voter_id=0, votes_tally=vote_counts)
+        msg = (
+            f"🗳 <b>OVOZ BERISH JARAYONI: ({voted_count}/{alive_count} ovoz berildi)</b>\n\n"
+            f"🤫 <i>Ovoz berish vaqtida guruh chati vaqtincha yopildi.</i>\n\n"
+            f"Kimni bunkerdan chiqarib yuboramiz?\n"
+            f"<i>O'zingiz nomzod deb bilgan o'yinchining tugmasini bosing:</i>"
+        )
+        try:
+            await self.bot.edit_message_text(
+                chat_id=game.group_chat_id,
+                message_id=msg_id,
+                text=msg,
+                reply_markup=kb,
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
 
     async def on_player_eliminated(self, event: GameEvent) -> None:
         game_id = event.game_id

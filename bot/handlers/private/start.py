@@ -1,6 +1,6 @@
 """
 Private chat command handlers for BUNKER bot (/start, /profile, /help, /rules, /guide).
-Enforces mandatory subscription checks and supports direct deep-link joining from groups.
+Enforces mandatory subscription checks, deep-link joining, shop purchases, and referral system.
 """
 from aiogram import Router, F, Bot
 from aiogram.filters import CommandStart, Command, CommandObject
@@ -12,6 +12,7 @@ from game.engine import GameEngine
 from services.subscription_service import SubscriptionService
 from utils.formatters import format_profile, format_lobby_message
 from bot.keyboards.lobby_kb import get_lobby_keyboard
+from bot.keyboards.shop_kb import get_shop_keyboard, get_shop_item_buy_keyboard, SHOP_ITEMS
 from models.user import UserModel
 
 router = Router()
@@ -20,10 +21,12 @@ router = Router()
 def get_private_main_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="👤 Profilim", callback_data="show_my_profile")
+    builder.button(text="🛒 Do'kon", callback_data="open_shop")
+    builder.button(text="👥 Do'stlarni taklif qilish", callback_data="show_referral_panel")
     builder.button(text="🏅 Yutuqlarim", callback_data="show_my_achievements")
     builder.button(text="📚 Foydalanish qo'llanmasi", callback_data="show_bot_guide")
     builder.button(text="ℹ️ O'yin haqida", callback_data="show_about_game")
-    builder.adjust(2, 1, 1)
+    builder.adjust(2, 2, 2)
     return builder.as_markup()
 
 
@@ -37,7 +40,7 @@ async def cmd_start(
     user: UserModel,
     bot: Bot
 ):
-    """Marks user as bot started, handles deep-link game join, checks mandatory sub, and displays welcome panel."""
+    """Marks user as bot started, handles deep-link game join/referrals, checks mandatory sub, and displays welcome panel."""
     await user_repo.set_bot_started(message.from_user.id)
 
     # 1. Check Mandatory Subscription
@@ -52,7 +55,35 @@ async def cmd_start(
         await message.answer(sub_text, reply_markup=kb, parse_mode="HTML")
         return
 
-    # 2. Check if user clicked direct "O'yinga qo'shilish" deep-link (e.g. /start join_123)
+    # 2. Check if user clicked referral link (/start ref_123456)
+    if command.args and command.args.startswith("ref_"):
+        try:
+            referrer_id = int(command.args.replace("ref_", ""))
+            if referrer_id != message.from_user.id:
+                recorded = await user_repo.record_referral(
+                    referrer_id=referrer_id,
+                    referred_id=message.from_user.id,
+                    bonus_coins=50,
+                    bonus_diamonds=10,
+                    newcomer_bonus_coins=30
+                )
+                if recorded:
+                    try:
+                        await bot.send_message(
+                            chat_id=referrer_id,
+                            text=(
+                                f"🎉 <b>Ajoyib xabar!</b>\n"
+                                f"Siz taklif qilgan do'stingiz <b>{message.from_user.first_name}</b> botga kirdi!\n\n"
+                                f"💰 <b>+50 tanga</b> va 💎 <b>+10 brilliant</b> hisobingizga qo'shildi!"
+                            ),
+                            parse_mode="HTML"
+                        )
+                    except Exception:
+                        pass
+        except ValueError:
+            pass
+
+    # 3. Check if user clicked direct "O'yinga qo'shilish" deep-link (/start join_123)
     if command.args and command.args.startswith("join_"):
         try:
             game_id = int(command.args.replace("join_", ""))
@@ -139,6 +170,146 @@ async def cb_check_subscription_status(
     await callback.answer("✅ A'zolik tasdiqlandi!")
 
 
+# ==================== SHOP HANDLERS ====================
+
+@router.callback_query(F.data == "open_shop")
+async def cb_open_shop(callback: CallbackQuery, user_repo: UserRepository):
+    """Renders the in-game store matching official layout."""
+    user = await user_repo.get_by_id(callback.from_user.id)
+    coins = user.coins if user else 0
+
+    shop_text = (
+        f"🛒 <b>DO'KON</b>\n\n"
+        f"💵 <b>Pulingiz:</b> {coins}\n\n"
+        f"<i>Kartani tanlang — tavsifi va narxi chiqadi.\n"
+        f"Bir o'yinda faqat bitta maxsus karta ishlata olasiz. Sotib olingani ishlatilmaguncha saqlanib turadi.</i>"
+    )
+
+    try:
+        await callback.message.edit_text(shop_text, reply_markup=get_shop_keyboard(), parse_mode="HTML")
+    except Exception:
+        pass
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("shop_view:"))
+async def cb_shop_view(callback: CallbackQuery, user_repo: UserRepository):
+    """Shows details and buy button for a specific shop item."""
+    code = callback.data.split(":")[1]
+    item = next((it for it in SHOP_ITEMS if it["code"] == code), None)
+    if not item:
+        await callback.answer("Karta topilmadi.", show_alert=True)
+        return
+
+    user = await user_repo.get_by_id(callback.from_user.id)
+    coins = user.coins if user else 0
+
+    text = (
+        f"{item['icon']} <b>{item['name'].upper()}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💰 <b>Narxi:</b> {item['price']} tanga\n"
+        f"💵 <b>Sizning balansingiz:</b> {coins} tanga\n\n"
+        f"📝 <b>Tavsif:</b>\n{item['description']}\n\n"
+        f"<i>Sotib olingan karta profilingiz inventarida saqlanadi va navbatdagi o'yinda ishlatish mumkin.</i>"
+    )
+
+    kb = get_shop_item_buy_keyboard(item["code"], item["price"])
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        pass
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("shop_buy:"))
+async def cb_shop_buy(callback: CallbackQuery, user_repo: UserRepository):
+    """Executes item purchase."""
+    code = callback.data.split(":")[1]
+    item = next((it for it in SHOP_ITEMS if it["code"] == code), None)
+    if not item:
+        await callback.answer("Karta topilmadi.", show_alert=True)
+        return
+
+    res = await user_repo.buy_inventory_item(
+        user_id=callback.from_user.id,
+        item_code=item["code"],
+        item_name=item["name"],
+        cost=item["price"]
+    )
+
+    if not res.get("success"):
+        err = res.get("error")
+        if err == "INSUFFICIENT_FUNDS":
+            user_coins = res.get("user_coins", 0)
+            needed = item["price"] - user_coins
+            await callback.answer(
+                f"❌ Mablag' yetarli emas!\nBalansingiz: {user_coins} tanga.\nYana {needed} tanga kerak.",
+                show_alert=True
+            )
+        else:
+            await callback.answer("❌ Xaridni amalga oshirishda xatolik yuz berdi.", show_alert=True)
+        return
+
+    new_bal = res.get("new_balance", 0)
+    await callback.answer(f"✅ {item['name']} sotib olindi! Qolgan balans: {new_bal} tanga.", show_alert=True)
+
+    # Return to shop
+    shop_text = (
+        f"🛒 <b>DO'KON</b>\n\n"
+        f"💵 <b>Pulingiz:</b> {new_bal}\n\n"
+        f"<i>Kartani tanlang — tavsifi va narxi chiqadi.\n"
+        f"Bir o'yinda faqat bitta maxsus karta ishlata olasiz. Sotib olingani ishlatilmaguncha saqlanib turadi.</i>"
+    )
+    try:
+        await callback.message.edit_text(shop_text, reply_markup=get_shop_keyboard(), parse_mode="HTML")
+    except Exception:
+        pass
+
+
+# ==================== REFERRAL HANDLERS ====================
+
+@router.callback_query(F.data == "show_referral_panel")
+async def cb_show_referral_panel(callback: CallbackQuery, user_repo: UserRepository, bot: Bot):
+    """Displays referral link and statistics."""
+    bot_info = await bot.get_me()
+    uid = callback.from_user.id
+    ref_link = f"https://t.me/{bot_info.username}?start=ref_{uid}"
+    stats = await user_repo.get_referral_stats(uid)
+
+    text = (
+        f"👥 <b>DO'STLARNI TAKLIF QILISH (REFERAL TIZIMI)</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"Do'stlaringizni botga taklif qiling va har bir taklif qilingan do'stingiz uchun mukofot oling!\n\n"
+        f"🎁 <b>Mukofotlar:</b>\n"
+        f"• Sizga: 💰 <b>+50 tanga</b> va 💎 <b>+10 brilliant</b>\n"
+        f"• Do'stingizga: 💰 <b>+30 tanga</b> xush kelibsiz bonusi!\n\n"
+        f"🔗 <b>Sizning shaxsiy referal havolangiz:</b>\n"
+        f"<code>{ref_link}</code>\n\n"
+        f"📊 <b>Sizning referal statistikangiz:</b>\n"
+        f"• Taklif qilingan do'stlar: <b>{stats['total_referrals']} ta</b>\n"
+        f"• Ishlangan tangalar: <b>{stats['earned_coins']} 💰</b>\n"
+        f"• Ishlangan brilliantlar: <b>{stats['earned_diamonds']} 💎</b>"
+    )
+
+    share_text = f"🏢 Bunker multiplayer o'yinini birga o'ynaymiz! Havola orqali kiring va 30 tanga bonus oling: {ref_link}"
+    import urllib.parse
+    share_url = f"https://t.me/share/url?url={urllib.parse.quote(ref_link)}&text={urllib.parse.quote('Bunker o\'yiniga taklifnoma! 🏢')}"
+
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🚀 Do'stlarga ulashish", url=share_url)
+    builder.button(text="🛒 Do'kon", callback_data="open_shop")
+    builder.button(text="⬅️ Bosh menyu", callback_data="back_to_start")
+    builder.adjust(1, 2)
+
+    try:
+        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except Exception:
+        pass
+    await callback.answer()
+
+
+# ==================== PROFILE & ACHIEVEMENTS ====================
+
 @router.message(Command("profile"), IsPrivateChat())
 async def cmd_profile(message: Message, user_repo: UserRepository, achievement_repo: AchievementRepository):
     """Displays player profile and stats."""
@@ -160,12 +331,21 @@ async def cb_show_my_profile(callback: CallbackQuery, user_repo: UserRepository,
         return
 
     achievements = await achievement_repo.get_user_achievements(user.id)
+    inventory = await user_repo.get_user_inventory(user.id)
     text = format_profile(user.model_dump(), achievements)
     
+    if inventory:
+        inv_lines = ["\n🎒 <b>Maxsus kartalaringiz (Inventar):</b>"]
+        for inv in inventory:
+            inv_lines.append(f"• <b>{inv['item_name']}</b> ({inv['quantity']} dona)")
+        text += "\n" + "\n".join(inv_lines)
+
     builder = InlineKeyboardBuilder()
+    builder.button(text="🛒 Do'kon", callback_data="open_shop")
+    builder.button(text="👥 Referal", callback_data="show_referral_panel")
     builder.button(text="🏅 Yutuqlarim", callback_data="show_my_achievements")
     builder.button(text="⬅️ Bosh menyu", callback_data="back_to_start")
-    builder.adjust(1)
+    builder.adjust(2, 2)
 
     try:
         await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -209,25 +389,23 @@ async def cb_show_bot_guide(callback: CallbackQuery):
 
         "<b>2️⃣ O'yinni boshlash:</b>\n"
         "• Guruhda <b>/bunker</b> buyrug'ini yozing.\n"
-        "• O'yinchilar <b>[🎮 O'yinga qo'shilish]</b> tugmasini bosadi.\n"
-        "• <i>Muhim:</i> Har bir ishtirokchi botga shaxsiyda <b>/start</b> bosgan bo'lishi shart (kartalarini olish uchun).\n"
+        "• O'yinchilar <b>[🎮 O'yinga qo'shilish]</b> tugmasini bosadi va avtomatik o'yinga ulanadi.\n"
         "• Kamida 5 nafar o'yinchi yig'ilgach, <b>[🚀 O'yinni boshlash]</b> tugmasi bosiladi.\n\n"
 
         "<b>3️⃣ 1-bosqich: Xususiyat ochish (⏱ 1.5 daqiqa):</b>\n"
         "• Guruh chati vaqtincha yopiladi.\n"
         "• Har bir o'yinchi 1.5 daqiqa (90 soniya) ichida o'ziga ma'qul 1 ta xususiyatini (Kasb, Hobbi, Sog'liq va h.k.) ochadi.\n\n"
 
-        "<b>4️⃣ 2-bosqich: Muhokama (⏱ 2 daqiqa):</b>\n"
+        "<b>4️⃣ 2-bosqich: Muhokama (⏱ 2-5 daqiqa):</b>\n"
         "• Guruh chati ochiladi!\n"
-        "• O'yinchilar guruhda qizg'in bahslashadi: nega aynan ular bunkerda qolishi kerakligini isbotlaydi va kim xavfli/foydasiz ekanligini muhokama qiladi.\n\n"
+        "• O'yinchilar soniga qarab muhokama vaqti beriladi (5-8 kishi: 2 daq, 8-10 kishi: 3 daq, 10-15 kishi: 4 daq, 15-20 kishi: 5 daq).\n\n"
 
         "<b>5️⃣ 3-bosqich: Ovoz berish (⏱ 60 sek):</b>\n"
         "• Guruh chati yana yopiladi.\n"
-        "• O'yinchilar tugmalar orqali eng kam foydali nomzodga ovoz beradi. Eng ko'p ovoz olgan o'yinchi bunkerdan chiqariladi.\n\n"
+        "• O'yinchilar tugmalar orqali ovoz beradi. Har bir nomzodda to'plangan ovozlar real vaqtda jonli ko'rinib turadi.\n\n"
 
-        "<b>6️⃣ G'alaba va Yakuniy Tahlil:</b>\n"
-        "• O'yinchilar soniga qarab (2, 3 yoki 4 kishi) g'oliblar qolguncha raundlar davom etadi.\n"
-        "• Yakunda barcha g'oliblarning xususiyatlari Falokatga solishtirilib, haqiqiy <b>G'alaba</b> yoki <b>Yutqaziq</b> e'lon qilinadi!"
+        "<b>6️⃣ G'alaba va Mukofotlar:</b>\n"
+        "• Bunker sig'imiga qarab g'oliblar qolgach, barcha g'oliblarga 💰 tangalar va 💎 brilliantlar beriladi!"
     )
     builder = InlineKeyboardBuilder()
     builder.button(text="ℹ️ O'yin haqida ma'lumot", callback_data="show_about_game")
@@ -263,11 +441,10 @@ async def cb_show_about_game(callback: CallbackQuery):
         "• 🎒 <b>Inventar:</b> Suv filtri, Generator, Qurol, Dori-darmon, Gitara...\n"
         "• 🎓 <b>Bilim:</b> Tibbiyot, Qurilish, Qishloq xo'jaligi, Falsafa...\n"
         "• 🧠 <b>Xarakter</b> va 🧬 <b>Genetika</b>\n"
-        "• ⚡ <b>Qobiliyatlar va Maxfiy kartalar:</b> Boshqalarning kartasini almashtirish, o'g'irlash, himoya qalqoni va h.k.\n\n"
+        "• ⚡ <b>Qobiliyatlar va Do'kon kartalari:</b> Haydashdan himoya, 2x ovoz, Josus, Fosh qilish...\n\n"
 
         "🌋 <b>12 xil Falokat (Apokalipsis) turlari:</b>\n"
-        "Yadro urushi, Suv toshqini, Zombi epidemiyasi, Yangi muzlik davri, Robotlar isyoni va boshqalar.\n\n"
-        "<i>Har bir falokatda har xil kasb va buyumlar kerak bo'ladi!</i>"
+        "Yadro urushi, Suv toshqini, Zombi epidemiyasi, Yangi muzlik davri, Robotlar isyoni va boshqalar."
     )
     builder = InlineKeyboardBuilder()
     builder.button(text="📚 Foydalanish qo'llanmasi", callback_data="show_bot_guide")

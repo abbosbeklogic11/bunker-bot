@@ -320,7 +320,7 @@ class GameEngine:
                     await self.player_reveal_attribute(game_id, p.user_id, chosen.attribute_type)
 
     async def start_discussion_phase(self, game_id: int) -> None:
-        """Transitions from Attribute Reveal to Discussion Phase (2 minutes)."""
+        """Transitions from Attribute Reveal to Discussion Phase with dynamic duration."""
         game = await self.game_repo.get_by_id(game_id)
         if not game or game.state == GameState.DISCUSSION:
             return
@@ -328,13 +328,30 @@ class GameEngine:
         # Auto-reveal any remaining unrevealed player attributes for this round
         await self.auto_reveal_unrevealed_players(game_id, game.current_round)
 
+        alive_players = await self.player_repo.get_alive_players(game_id)
+        player_count = len(alive_players)
+
+        # Dynamic discussion duration:
+        # 5-8 players: 2 min (120s)
+        # 8-10 players: 3 min (180s)
+        # 10-15 players: 4 min (240s)
+        # 15-20 players: 5 min (300s)
+        if player_count <= 8:
+            duration = 120
+        elif player_count <= 10:
+            duration = 180
+        elif player_count <= 15:
+            duration = 240
+        else:
+            duration = 300
+
         await self.game_repo.update_state(game_id, GameState.DISCUSSION)
-        await self.timer_engine.set_phase_timer(game_id, GamePhase.DISCUSSION.value, self.config.DISCUSSION_TIME)
+        await self.timer_engine.set_phase_timer(game_id, GamePhase.DISCUSSION.value, duration)
 
         await self.event_bus.emit(GameEvent(
             type=GameEventType.PHASE_CHANGED,
             game_id=game_id,
-            data={"phase": GamePhase.DISCUSSION.value, "round": game.current_round, "duration": self.config.DISCUSSION_TIME}
+            data={"phase": GamePhase.DISCUSSION.value, "round": game.current_round, "duration": duration}
         ))
 
     async def start_ability_phase(self, game_id: int) -> None:
@@ -379,24 +396,30 @@ class GameEngine:
 
     # ==================== VOTING & ELIMINATION ====================
 
-    async def submit_vote(self, game_id: int, voter_id: int, target_id: int) -> Dict[str, Any]:
-        """Processes a vote from an active player."""
+    async def submit_vote(
+        self,
+        game_id: int,
+        voter_id: int,
+        target_id: int
+    ) -> Dict[str, Any]:
+        """Submits an elimination vote."""
         game = await self.game_repo.get_by_id(game_id)
-        if not game or game.state != GameState.VOTING:
+        if not game or game.state not in (GameState.VOTING, GameState.DUEL):
             return {"success": False, "error": "NOT_IN_VOTING"}
-
-        if voter_id == target_id:
-            return {"success": False, "error": "CANNOT_VOTE_SELF"}
 
         # Validate voter is alive
         voter = await self.player_repo.get_player(game_id, voter_id)
         if not voter or voter.status not in (PlayerStatus.ACTIVE, PlayerStatus.PROTECTED):
-            return {"success": False, "error": "VOTER_NOT_ALIVE"}
+            return {"success": False, "error": "VOTER_DEAD"}
 
         # Validate target is alive
         target = await self.player_repo.get_player(game_id, target_id)
         if not target or target.status not in (PlayerStatus.ACTIVE, PlayerStatus.PROTECTED):
-            return {"success": False, "error": "TARGET_NOT_ALIVE"}
+            return {"success": False, "error": "TARGET_DEAD"}
+
+        # Check self-voting
+        if voter_id == target_id and not self.config.VOTE_CHANGE_ALLOWED:
+            return {"success": False, "error": "SELF_VOTE_NOT_ALLOWED"}
 
         # Submit vote
         submitted = await self.vote_repo.submit_vote(game_id, game.current_round, voter_id, target_id, weight=1)
@@ -409,11 +432,17 @@ class GameEngine:
 
         alive_players = await self.player_repo.get_alive_players(game_id)
         total_voters = await self.vote_repo.get_voter_count(game_id, game.current_round)
+        vote_counts = await self.vote_repo.get_vote_counts(game_id, game.current_round)
 
         await self.event_bus.emit(GameEvent(
             type=GameEventType.VOTE_SUBMITTED,
             game_id=game_id,
-            data={"voter_id": voter_id, "voted_count": total_voters, "alive_count": len(alive_players)}
+            data={
+                "voter_id": voter_id,
+                "voted_count": total_voters,
+                "alive_count": len(alive_players),
+                "vote_counts": vote_counts
+            }
         ))
 
         # If all alive players have voted, immediately finalize voting

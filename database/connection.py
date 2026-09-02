@@ -277,6 +277,24 @@ class SQLiteConnectionAdapter:
             value TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS user_inventory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            item_code TEXT NOT NULL,
+            item_name TEXT NOT NULL,
+            quantity INTEGER DEFAULT 1,
+            purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS referrals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            referrer_id INTEGER NOT NULL,
+            referred_id INTEGER NOT NULL UNIQUE,
+            bonus_coins INTEGER DEFAULT 50,
+            bonus_diamonds INTEGER DEFAULT 10,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
         INSERT OR IGNORE INTO system_settings (key, value) VALUES ('mandatory_subscription_enabled', '1');
 
         INSERT OR IGNORE INTO achievements (code, name, description, icon, reward_coins, reward_diamonds) VALUES

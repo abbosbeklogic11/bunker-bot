@@ -11,6 +11,10 @@ from .admin_kb import (
     get_admin_game_control_keyboard, get_back_to_admin_keyboard
 )
 
+from .shop_kb import (
+    get_shop_keyboard, get_shop_item_buy_keyboard, SHOP_ITEMS
+)
+
 __all__ = [
     "get_lobby_keyboard",
     "get_game_dashboard_keyboard",
@@ -27,4 +31,7 @@ __all__ = [
     "get_delete_channel_keyboard",
     "get_admin_game_control_keyboard",
     "get_back_to_admin_keyboard",
+    "get_shop_keyboard",
+    "get_shop_item_buy_keyboard",
+    "SHOP_ITEMS",
 ]
