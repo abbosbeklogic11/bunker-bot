@@ -20,6 +20,10 @@ def get_admin_panel_keyboard(sub_enabled: bool = True) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+# Backward-compatible alias
+get_admin_menu_keyboard = get_admin_panel_keyboard
+
+
 def get_channels_management_keyboard(channels: List[Dict[str, Any]], sub_enabled: bool = True) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 

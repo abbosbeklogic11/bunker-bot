@@ -5,7 +5,11 @@ from .ability_kb import (
     get_player_abilities_keyboard, get_ability_target_keyboard,
     get_player_cards_keyboard, get_card_target_keyboard
 )
-from .admin_kb import get_admin_menu_keyboard, get_admin_game_control_keyboard
+from .admin_kb import (
+    get_admin_panel_keyboard, get_admin_menu_keyboard,
+    get_channels_management_keyboard, get_delete_channel_keyboard,
+    get_admin_game_control_keyboard, get_back_to_admin_keyboard
+)
 
 __all__ = [
     "get_lobby_keyboard",
@@ -17,6 +21,10 @@ __all__ = [
     "get_ability_target_keyboard",
     "get_player_cards_keyboard",
     "get_card_target_keyboard",
+    "get_admin_panel_keyboard",
     "get_admin_menu_keyboard",
+    "get_channels_management_keyboard",
+    "get_delete_channel_keyboard",
     "get_admin_game_control_keyboard",
+    "get_back_to_admin_keyboard",
 ]
