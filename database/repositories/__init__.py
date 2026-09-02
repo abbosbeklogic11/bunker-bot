@@ -4,6 +4,7 @@ from .player_repo import PlayerRepository
 from .vote_repo import VoteRepository
 from .event_repo import EventRepository
 from .achievement_repo import AchievementRepository
+from .channel_repo import ChannelRepository
 
 __all__ = [
     "UserRepository",
@@ -12,4 +13,5 @@ __all__ = [
     "VoteRepository",
     "EventRepository",
     "AchievementRepository",
+    "ChannelRepository",
 ]

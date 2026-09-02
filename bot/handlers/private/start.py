@@ -1,12 +1,14 @@
 """
 Private chat command handlers for BUNKER bot (/start, /profile, /help, /rules, /guide).
+Enforces mandatory subscription checks before granting full access.
 """
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from bot.filters import IsPrivateChat
-from database.repositories import UserRepository, AchievementRepository
+from database.repositories import UserRepository, AchievementRepository, ChannelRepository
+from services.subscription_service import SubscriptionService
 from utils.formatters import format_profile
 from models.user import UserModel
 
@@ -24,9 +26,27 @@ def get_private_main_keyboard():
 
 
 @router.message(CommandStart(), IsPrivateChat())
-async def cmd_start(message: Message, user_repo: UserRepository, user: UserModel):
-    """Marks user as bot started and displays welcome panel."""
+async def cmd_start(
+    message: Message,
+    user_repo: UserRepository,
+    channel_repo: ChannelRepository,
+    user: UserModel,
+    bot: Bot
+):
+    """Marks user as bot started, checks mandatory subscription, and displays welcome panel."""
     await user_repo.set_bot_started(message.from_user.id)
+
+    # 1. Check Mandatory Subscription
+    is_subscribed, unjoined = await SubscriptionService.check_user_subscription(bot, message.from_user.id, channel_repo)
+    if not is_subscribed and unjoined:
+        kb = SubscriptionService.get_subscription_keyboard(unjoined)
+        sub_text = (
+            f"👋 <b>Assalomu alaykum, {message.from_user.first_name}!</b>\n\n"
+            f"⚠️ <b>Botdan to'liq foydalanish va guruhlarda o'yin o'ynash uchun rasmiy homiy kanallarimizga a'zo bo'ling:</b>\n\n"
+            f"<i>Barcha kanallarga a'zo bo'lgach, '✅ A'zolikni tekshirish' tugmasini bosing:</i>"
+        )
+        await message.answer(sub_text, reply_markup=kb, parse_mode="HTML")
+        return
 
     welcome_text = (
         f"👋 <b>Assalomu alaykum, {message.from_user.first_name}!</b>\n\n"
@@ -37,6 +57,35 @@ async def cmd_start(message: Message, user_repo: UserRepository, user: UserModel
     )
 
     await message.answer(welcome_text, reply_markup=get_private_main_keyboard(), parse_mode="HTML")
+
+
+@router.callback_query(F.data == "check_subscription_status")
+async def cb_check_subscription_status(
+    callback: CallbackQuery,
+    channel_repo: ChannelRepository,
+    bot: Bot
+):
+    """Verifies user's subscription on demand."""
+    is_subscribed, unjoined = await SubscriptionService.check_user_subscription(bot, callback.from_user.id, channel_repo)
+    if not is_subscribed and unjoined:
+        kb = SubscriptionService.get_subscription_keyboard(unjoined)
+        try:
+            await callback.message.edit_reply_markup(reply_markup=kb)
+        except Exception:
+            pass
+        await callback.answer("❌ Siz hali barcha kanallarga a'zo bo'lmadingiz! Iltimos, barcha kanallarga a'zo bo'ling.", show_alert=True)
+        return
+
+    welcome_text = (
+        f"🎉 <b>A'zolik muvaffaqiyatli tasdiqlandi!</b>\n\n"
+        f"🏢 <b>BUNKER multiplayer o'yiniga xush kelibsiz!</b>\n\n"
+        f"✅ Endi siz Telegram guruhlarida <b>/bunker</b> o'yinlarida bemalol qatnasha olasiz."
+    )
+    try:
+        await callback.message.edit_text(welcome_text, reply_markup=get_private_main_keyboard(), parse_mode="HTML")
+    except Exception:
+        pass
+    await callback.answer("✅ A'zolik tasdiqlandi!")
 
 
 @router.message(Command("profile"), IsPrivateChat())

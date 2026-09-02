@@ -8,12 +8,20 @@ from game.engine import GameEngine
 from utils.formatters import format_lobby_message
 from bot.keyboards.lobby_kb import get_lobby_keyboard
 from models.user import UserModel
+from database.repositories import ChannelRepository
+from services.subscription_service import SubscriptionService
 
 router = Router()
 
 
 @router.callback_query(F.data.startswith("lobby_join:"))
-async def handle_lobby_join(callback: CallbackQuery, game_engine: GameEngine, user: UserModel, bot: Bot):
+async def handle_lobby_join(
+    callback: CallbackQuery,
+    game_engine: GameEngine,
+    user: UserModel,
+    channel_repo: ChannelRepository,
+    bot: Bot
+):
     game_id = int(callback.data.split(":")[1])
     
     # 1. Ensure user has started the bot privately
@@ -21,6 +29,17 @@ async def handle_lobby_join(callback: CallbackQuery, game_engine: GameEngine, us
         bot_info = await bot.get_me()
         await callback.answer(
             f"❌ Avval botni shaxsiy chatda ishga tushiring!\n@{bot_info.username} ga /start yuboring.",
+            show_alert=True
+        )
+        return
+
+    # 2. Ensure user is subscribed to mandatory channels
+    is_sub, unjoined = await SubscriptionService.check_user_subscription(bot, callback.from_user.id, channel_repo)
+    if not is_sub and unjoined:
+        bot_info = await bot.get_me()
+        await callback.answer(
+            f"❌ O'yinga qo'shilish uchun avval majburiy kanallarga a'zo bo'ling!\n"
+            f"@{bot_info.username} ga shaxsiyda /start yuboring.",
             show_alert=True
         )
         return

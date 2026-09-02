@@ -106,3 +106,22 @@ class UserRepository:
                 "UPDATE users SET diamonds = diamonds + $1, updated_at = NOW() WHERE id = $2;",
                 amount, user_id
             )
+
+    async def get_total_users_count(self) -> int:
+        async with self._pool.acquire() as conn:
+            return await conn.fetchval("SELECT COUNT(*) FROM users;") or 0
+
+    async def get_today_users_count(self) -> int:
+        async with self._pool.acquire() as conn:
+            # Compatible with both SQLite and Postgres
+            try:
+                return await conn.fetchval("SELECT COUNT(*) FROM users WHERE DATE(created_at) = DATE('now');") or 0
+            except Exception:
+                return await conn.fetchval("SELECT COUNT(*) FROM users WHERE DATE(created_at) = CURRENT_DATE;") or 0
+
+    async def set_admin(self, user_id: int, is_admin: bool = True) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET is_admin = $1, updated_at = NOW() WHERE id = $2;",
+                1 if is_admin else 0, user_id
+            )

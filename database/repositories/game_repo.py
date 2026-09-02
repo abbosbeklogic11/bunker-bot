@@ -133,3 +133,15 @@ class GameRepository:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(query, game_id, limit)
             return [ActionModel.from_row(r) for r in rows]
+
+    async def get_total_games_count(self) -> int:
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval("SELECT COUNT(*) FROM games;") or 0
+
+    async def get_active_games_count(self) -> int:
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval("SELECT COUNT(*) FROM games WHERE state != 'FINISHED';") or 0
+
+    async def get_total_groups_count(self) -> int:
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval("SELECT COUNT(DISTINCT group_chat_id) FROM games;") or 0

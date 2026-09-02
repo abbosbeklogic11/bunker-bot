@@ -25,7 +25,7 @@ from bot.config.game_config import default_game_config
 from database.connection import create_pool, close_pool
 from database.repositories import (
     UserRepository, GameRepository, PlayerRepository,
-    VoteRepository, EventRepository, AchievementRepository
+    VoteRepository, EventRepository, AchievementRepository, ChannelRepository
 )
 from game.engine_events import EventBus
 from game.timers.timer_engine import TimerEngine
@@ -38,7 +38,7 @@ from services.dashboard_service import DashboardService
 from bot.middlewares import AuthMiddleware, ThrottlingMiddleware
 
 # Handlers & Callbacks
-from bot.handlers import group_lobby_router, group_admin_router, private_start_router
+from bot.handlers import group_lobby_router, group_admin_router, private_start_router, private_admin_router
 from bot.callbacks import (
     lobby_cb_router, game_cb_router, voting_cb_router,
     ability_cb_router, card_cb_router
@@ -84,6 +84,7 @@ async def main():
     vote_repo = VoteRepository(pool)
     event_repo = EventRepository(pool)
     achievement_repo = AchievementRepository(pool)
+    channel_repo = ChannelRepository(pool)
 
     # 4. Timer & Event Systems
     timer_engine = TimerEngine(redis_client)
@@ -126,9 +127,11 @@ async def main():
     dp["game_engine"] = game_engine
     dp["user_repo"] = user_repo
     dp["achievement_repo"] = achievement_repo
+    dp["channel_repo"] = channel_repo
     dp["dashboard_service"] = dash_service
 
     # 11. Register Routers
+    dp.include_router(private_admin_router)
     dp.include_router(private_start_router)
     dp.include_router(group_lobby_router)
     dp.include_router(group_admin_router)

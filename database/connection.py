@@ -263,6 +263,22 @@ class SQLiteConnectionAdapter:
             granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS required_channels (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_id TEXT NOT NULL UNIQUE,
+            title TEXT NOT NULL,
+            invite_link TEXT NOT NULL,
+            is_active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS system_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
+        INSERT OR IGNORE INTO system_settings (key, value) VALUES ('mandatory_subscription_enabled', '1');
+
         INSERT OR IGNORE INTO achievements (code, name, description, icon, reward_coins, reward_diamonds) VALUES
         ('first_win', 'Birinchi g''alaba', 'Bunkerda birinchi marta g''olib bo''ldingiz', '🏆', 100, 20),
         ('five_wins', '5 ta g''alaba', '5 marta bunkerda omon qoldingiz', '🔥', 250, 50),
