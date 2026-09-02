@@ -19,6 +19,36 @@ except ImportError:
 _pool: Any = None
 
 
+import os
+import tempfile
+
+
+def _resolve_writable_db_path(path: str) -> str:
+    """Finds a guaranteed writable directory for SQLite on Windows, Linux, Render, and Docker."""
+    # 1. Custom env var
+    env_path = os.getenv("SQLITE_DB_PATH")
+    if env_path:
+        os.makedirs(os.path.dirname(os.path.abspath(env_path)), exist_ok=True)
+        return env_path
+
+    # 2. Try current working directory
+    abs_path = os.path.abspath(path)
+    parent_dir = os.path.dirname(abs_path)
+    try:
+        os.makedirs(parent_dir, exist_ok=True)
+        test_file = os.path.join(parent_dir, ".db_test_write")
+        with open(test_file, "w") as f:
+            f.write("1")
+        os.remove(test_file)
+        return abs_path
+    except Exception:
+        pass
+
+    # 3. Fallback to /tmp which is always writable on Linux/Render/Docker
+    tmp_path = os.path.join(tempfile.gettempdir(), os.path.basename(path))
+    return tmp_path
+
+
 class SQLiteRecord(dict):
     """Dict subclass that allows attribute-style access like asyncpg.Record."""
     def __getattr__(self, name: str) -> Any:
@@ -30,17 +60,21 @@ class SQLiteRecord(dict):
 
 class SQLiteConnectionAdapter:
     def __init__(self, db_path: str = "bunker.db"):
-        self.db_path = db_path
+        self.db_path = _resolve_writable_db_path(db_path)
+        logger.info(f"Using SQLite database file: {self.db_path}")
         # Use isolation_level=None for autocommit (prevents transaction lock issues)
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False, isolation_level=None, timeout=30.0)
         self._conn.row_factory = sqlite3.Row
         self._lock = asyncio.Lock()
         
         # Optimize SQLite for multi-threaded/async access
-        cur = self._conn.cursor()
-        cur.execute("PRAGMA journal_mode=WAL;")
-        cur.execute("PRAGMA synchronous=NORMAL;")
-        cur.close()
+        try:
+            cur = self._conn.cursor()
+            cur.execute("PRAGMA journal_mode=WAL;")
+            cur.execute("PRAGMA synchronous=NORMAL;")
+            cur.close()
+        except Exception:
+            pass
         
         self._init_schema()
 

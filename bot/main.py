@@ -144,12 +144,33 @@ async def main():
     except Exception as e:
         logger.warning(f"Could not load active games: {e}")
 
+    # Optional HTTP health server for cloud platforms (Render/Railway Web Service)
+    port = int(os.getenv("PORT", 0))
+    runner = None
+    if port > 0:
+        try:
+            from aiohttp import web
+            async def handle_health(request):
+                return web.Response(text="BUNKER Telegram Bot is Running Live!")
+            app = web.Application()
+            app.router.add_get("/", handle_health)
+            app.router.add_get("/health", handle_health)
+            runner = web.AppRunner(app)
+            await runner.setup()
+            site = web.TCPSite(runner, "0.0.0.0", port)
+            await site.start()
+            logger.info(f"🌐 Cloud Health Check server listening on port {port}")
+        except Exception as e:
+            logger.warning(f"Could not start health check web server: {e}")
+
     logger.info("🤖 BUNKER Telegram Bot is now polling for updates!")
 
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
         logger.info("Shutting down BUNKER Game Server...")
+        if runner:
+            await runner.cleanup()
         await scheduler.stop()
         if redis_client:
             await redis_client.aclose()
