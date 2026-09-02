@@ -163,13 +163,14 @@ class NotificationService:
         # Mute group chat during attribute selection so players focus on buttons
         await self._mute_chat(game.group_chat_id)
 
-        duration = event.data.get("duration", 30)
+        duration = event.data.get("duration", 90)
+        time_text = "1.5 daqiqa (90 sek)" if duration == 90 else f"{duration} sek"
         kb = get_reveal_attribute_keyboard(game_id)
         msg = (
-            f"🔔 <b>{game.current_round}-RAUND: XUSUSIYAT OCHISH! (⏱ {duration} sek)</b>\n\n"
+            f"🔔 <b>{game.current_round}-RAUND: XUSUSIYAT OCHISH! (⏱ {time_text})</b>\n\n"
             f"🤫 <i>O'yinchilar xususiyatini tanlab olishi uchun chat vaqtincha yopildi.</i>\n\n"
-            f"🎯 <b>Har bir o'yinchi {duration} soniya ichida o'zining 1 ta xususiyatini tanlab ochishi kerak!</b>\n"
-            f"<i>(Hamma ochib bo'lgach yoki {duration} soniya tugagach, 2 daqiqalik muhokama boshlanadi va chat ochiladi)</i>\n\n"
+            f"🎯 <b>Har bir o'yinchi {time_text} ichida o'zining 1 ta xususiyatini tanlab ochishi kerak!</b>\n"
+            f"<i>(Hamma ochib bo'lgach yoki {time_text} tugagach, 2 daqiqalik muhokama boshlanadi va chat ochiladi)</i>\n\n"
             f"Qaysi xususiyatingizni ochmoqchisiz? Quyidagi tugmalardan birini bosing:"
         )
         try:

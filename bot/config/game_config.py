@@ -26,7 +26,7 @@ try:
         LOBBY_TIMEOUT: int = 1800        # seconds (30 min)
         LOBBY_TIMER_WARN: int = 300      # warn 5 min before close
 
-        REVEAL_TIME: int = 30            # 30 seconds to choose & reveal attribute
+        REVEAL_TIME: int = 90            # 90 seconds (1.5 minutes) to choose & reveal attribute
         DISCUSSION_TIME: int = 120       # 2 minutes of discussion
         ABILITY_TIME: int = 30           # 30 seconds for abilities
         VOTING_TIME: int = 60            # 60 seconds of voting
@@ -66,7 +66,7 @@ except ImportError:
         LOBBY_TIMEOUT: int = 1800
         LOBBY_TIMER_WARN: int = 300
 
-        REVEAL_TIME: int = 30
+        REVEAL_TIME: int = 90
         DISCUSSION_TIME: int = 120
         ABILITY_TIME: int = 30
         VOTING_TIME: int = 60

@@ -155,6 +155,7 @@ async def main():
     # Optional HTTP health server for cloud platforms (Render/Railway Web Service)
     port = int(os.getenv("PORT", 0))
     runner = None
+    keep_alive_task = None
     if port > 0:
         try:
             from aiohttp import web
@@ -168,6 +169,20 @@ async def main():
             site = web.TCPSite(runner, "0.0.0.0", port)
             await site.start()
             logger.info(f"🌐 Cloud Health Check server listening on port {port}")
+
+            # Self-keepalive loop to prevent cloud instance from freezing/sleeping
+            async def _keep_alive_loop():
+                import aiohttp
+                while True:
+                    await asyncio.sleep(240)
+                    try:
+                        async with aiohttp.ClientSession() as s:
+                            async with s.get(f"http://127.0.0.1:{port}/health", timeout=5) as resp:
+                                pass
+                    except Exception:
+                        pass
+
+            keep_alive_task = asyncio.create_task(_keep_alive_loop())
         except Exception as e:
             logger.warning(f"Could not start health check web server: {e}")
 
@@ -177,6 +192,8 @@ async def main():
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
         logger.info("Shutting down BUNKER Game Server...")
+        if keep_alive_task:
+            keep_alive_task.cancel()
         if runner:
             await runner.cleanup()
         await scheduler.stop()

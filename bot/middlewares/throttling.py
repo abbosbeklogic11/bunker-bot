@@ -8,7 +8,7 @@ from aiogram.types import TelegramObject, CallbackQuery
 
 
 class ThrottlingMiddleware(BaseMiddleware):
-    def __init__(self, rate_limit_sec: float = 0.5):
+    def __init__(self, rate_limit_sec: float = 0.2):
         super().__init__()
         self.rate_limit = rate_limit_sec
         self._user_last_action: Dict[int, float] = {}
@@ -27,9 +27,13 @@ class ThrottlingMiddleware(BaseMiddleware):
         now = time.time()
         last_time = self._user_last_action.get(uid, 0.0)
 
+        # Ignore repeated rapid clicks silently to prevent network bottlenecks
         if now - last_time < self.rate_limit:
             if isinstance(event, CallbackQuery):
-                await event.answer("⚠️ Iltimos, biroz kuting...", show_alert=False)
+                try:
+                    await event.answer()
+                except Exception:
+                    pass
             return None
 
         self._user_last_action[uid] = now

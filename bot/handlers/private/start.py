@@ -162,9 +162,9 @@ async def cb_show_bot_guide(callback: CallbackQuery):
         "• <i>Muhim:</i> Har bir ishtirokchi botga shaxsiyda <b>/start</b> bosgan bo'lishi shart (kartalarini olish uchun).\n"
         "• Kamida 5 nafar o'yinchi yig'ilgach, <b>[🚀 O'yinni boshlash]</b> tugmasi bosiladi.\n\n"
 
-        "<b>3️⃣ 1-bosqich: Xususiyat ochish (⏱ 30 sek):</b>\n"
+        "<b>3️⃣ 1-bosqich: Xususiyat ochish (⏱ 1.5 daqiqa):</b>\n"
         "• Guruh chati vaqtincha yopiladi.\n"
-        "• Har bir o'yinchi 30 soniya ichida o'ziga ma'qul 1 ta xususiyatini (Kasb, Hobbi, Sog'liq va h.k.) ochadi.\n\n"
+        "• Har bir o'yinchi 1.5 daqiqa (90 soniya) ichida o'ziga ma'qul 1 ta xususiyatini (Kasb, Hobbi, Sog'liq va h.k.) ochadi.\n\n"
 
         "<b>4️⃣ 2-bosqich: Muhokama (⏱ 2 daqiqa):</b>\n"
         "• Guruh chati ochiladi!\n"
