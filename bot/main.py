@@ -126,6 +126,10 @@ async def main():
     # 10. Register Dependency Injection in Dispatcher
     dp["game_engine"] = game_engine
     dp["user_repo"] = user_repo
+    dp["game_repo"] = game_repo
+    dp["player_repo"] = player_repo
+    dp["vote_repo"] = vote_repo
+    dp["event_repo"] = event_repo
     dp["achievement_repo"] = achievement_repo
     dp["channel_repo"] = channel_repo
     dp["dashboard_service"] = dash_service
