@@ -1,15 +1,17 @@
 """
 Private chat command handlers for BUNKER bot (/start, /profile, /help, /rules, /guide).
-Enforces mandatory subscription checks before granting full access.
+Enforces mandatory subscription checks and supports direct deep-link joining from groups.
 """
 from aiogram import Router, F, Bot
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.types import Message, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from bot.filters import IsPrivateChat
 from database.repositories import UserRepository, AchievementRepository, ChannelRepository
+from game.engine import GameEngine
 from services.subscription_service import SubscriptionService
-from utils.formatters import format_profile
+from utils.formatters import format_profile, format_lobby_message
+from bot.keyboards.lobby_kb import get_lobby_keyboard
 from models.user import UserModel
 
 router = Router()
@@ -28,12 +30,14 @@ def get_private_main_keyboard():
 @router.message(CommandStart(), IsPrivateChat())
 async def cmd_start(
     message: Message,
+    command: CommandObject,
     user_repo: UserRepository,
     channel_repo: ChannelRepository,
+    game_engine: GameEngine,
     user: UserModel,
     bot: Bot
 ):
-    """Marks user as bot started, checks mandatory subscription, and displays welcome panel."""
+    """Marks user as bot started, handles deep-link game join, checks mandatory sub, and displays welcome panel."""
     await user_repo.set_bot_started(message.from_user.id)
 
     # 1. Check Mandatory Subscription
@@ -42,11 +46,58 @@ async def cmd_start(
         kb = SubscriptionService.get_subscription_keyboard(unjoined)
         sub_text = (
             f"👋 <b>Assalomu alaykum, {message.from_user.first_name}!</b>\n\n"
-            f"⚠️ <b>Botdan to'liq foydalanish va guruhlarda o'yin o'ynash uchun rasmiy homiy kanallarimizga a'zo bo'ling:</b>\n\n"
+            f"⚠️ <b>Botdan to'liq foydalanish va guruhlarda o'yinga qo'shilish uchun rasmiy homiy kanallarimizga a'zo bo'ling:</b>\n\n"
             f"<i>Barcha kanallarga a'zo bo'lgach, '✅ A'zolikni tekshirish' tugmasini bosing:</i>"
         )
         await message.answer(sub_text, reply_markup=kb, parse_mode="HTML")
         return
+
+    # 2. Check if user clicked direct "O'yinga qo'shilish" deep-link (e.g. /start join_123)
+    if command.args and command.args.startswith("join_"):
+        try:
+            game_id = int(command.args.replace("join_", ""))
+        except ValueError:
+            game_id = None
+
+        if game_id:
+            join_res = await game_engine.join_game(game_id, message.from_user.id)
+            if join_res.get("success"):
+                # Update group lobby message
+                players = await game_engine.player_repo.get_all_players(game_id)
+                players_data = []
+                for p in players:
+                    u = await game_engine.user_repo.get_by_id(p.user_id)
+                    players_data.append({"name": u.first_name if u else "O'yinchi", "first_name": u.first_name if u else ""})
+                
+                game = await game_engine.game_repo.get_by_id(game_id)
+                if game and game.dashboard_message_id:
+                    bot_info = await bot.get_me()
+                    text = format_lobby_message(game_id, players_data, max_players=game_engine.config.MAX_PLAYERS, min_players=game_engine.config.MIN_PLAYERS)
+                    kb = get_lobby_keyboard(game_id, len(players_data), max_players=game_engine.config.MAX_PLAYERS, bot_username=bot_info.username)
+                    try:
+                        await bot.edit_message_text(chat_id=game.group_chat_id, message_id=game.dashboard_message_id, text=text, reply_markup=kb, parse_mode="HTML")
+                    except Exception:
+                        pass
+
+                msg = (
+                    f"🎉 <b>Tabriklaymiz, {message.from_user.first_name}!</b>\n\n"
+                    f"✅ <b>Siz #{game_id}-sonli Bunker o'yiniga muvaffaqiyatli qo'shildingiz!</b>\n\n"
+                    f"📍 <i>Guruhga qaytib o'yin boshlanishini kuting. Barcha maxfiy xususiyatlaringiz shu yerga yuboriladi.</i>"
+                )
+                await message.answer(msg, reply_markup=get_private_main_keyboard(), parse_mode="HTML")
+                return
+            else:
+                err = join_res.get("error")
+                if err == "ALREADY_JOINED":
+                    msg = f"ℹ️ <b>Siz allaqachon #{game_id}-sonli o'yinga qo'shilgansiz!</b>\nGuruhga qaytib o'yinni kuting."
+                elif err == "LOBBY_FULL":
+                    msg = f"❌ <b>#{game_id}-sonli o'yin lobby'si to'lgan (20/20)!</b>"
+                elif err == "NOT_IN_LOBBY":
+                    msg = f"❌ <b>#{game_id}-sonli o'yin allaqachon boshlangan yoki yakunlangan!</b>"
+                else:
+                    msg = f"❌ <b>O'yinga qo'shilishda xatolik yuz berdi.</b>"
+                await message.answer(msg, reply_markup=get_private_main_keyboard(), parse_mode="HTML")
+                return
 
     welcome_text = (
         f"👋 <b>Assalomu alaykum, {message.from_user.first_name}!</b>\n\n"

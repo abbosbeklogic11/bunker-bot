@@ -63,8 +63,9 @@ async def handle_lobby_join(
         u = await game_engine.user_repo.get_by_id(p.user_id)
         players_data.append({"name": u.first_name if u else "O'yinchi", "first_name": u.first_name if u else ""})
 
+    bot_info = await bot.get_me()
     text = format_lobby_message(game_id, players_data, max_players=game_engine.config.MAX_PLAYERS, min_players=game_engine.config.MIN_PLAYERS)
-    kb = get_lobby_keyboard(game_id, len(players_data), max_players=game_engine.config.MAX_PLAYERS)
+    kb = get_lobby_keyboard(game_id, len(players_data), max_players=game_engine.config.MAX_PLAYERS, bot_username=bot_info.username)
 
     try:
         await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")

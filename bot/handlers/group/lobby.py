@@ -27,10 +27,11 @@ async def cmd_bunker(message: Message, game_engine: GameEngine, user: UserModel,
         return
 
     game = res.get("game")
+    bot_info = await bot.get_me()
     
     players_data = [{"name": user.first_name, "first_name": user.first_name}]
     text = format_lobby_message(game.id, players_data, max_players=game_engine.config.MAX_PLAYERS, min_players=game_engine.config.MIN_PLAYERS)
-    kb = get_lobby_keyboard(game.id, player_count=1, max_players=game_engine.config.MAX_PLAYERS, is_creator=True)
+    kb = get_lobby_keyboard(game.id, player_count=1, max_players=game_engine.config.MAX_PLAYERS, is_creator=True, bot_username=bot_info.username)
 
     sent_msg = await message.answer(text, reply_markup=kb, parse_mode="HTML")
     await game_engine.game_repo.update_dashboard_message_id(game.id, sent_msg.message_id)
