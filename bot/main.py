@@ -186,6 +186,35 @@ async def main():
         except Exception as e:
             logger.warning(f"Could not start health check web server: {e}")
 
+    # 13. Set Telegram Bot Commands for Groups and Private Chats
+    try:
+        from aiogram.types import BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats, BotCommandScopeDefault
+
+        group_commands = [
+            BotCommand(command="bunker", description="🏢 Yangi Bunker o'yinini yaratish"),
+            BotCommand(command="start_game", description="🚀 O'yinni darhol boshlash (Admin)"),
+            BotCommand(command="stop_game", description="🛑 Faol o'yinni to'xtatish (Admin)"),
+        ]
+
+        private_commands = [
+            BotCommand(command="start", description="🤖 Botni ishga tushirish / Bosh menyu"),
+            BotCommand(command="profile", description="👤 Profil va inventarni ko'rish"),
+            BotCommand(command="admin", description="👑 Admin panel (Faqat adminlar)"),
+        ]
+
+        default_commands = [
+            BotCommand(command="bunker", description="🏢 Yangi Bunker o'yini"),
+            BotCommand(command="start", description="🤖 Botni ishga tushirish"),
+            BotCommand(command="profile", description="👤 Profilim"),
+        ]
+
+        await bot.set_my_commands(group_commands, scope=BotCommandScopeAllGroupChats())
+        await bot.set_my_commands(private_commands, scope=BotCommandScopeAllPrivateChats())
+        await bot.set_my_commands(default_commands, scope=BotCommandScopeDefault())
+        logger.info("✅ Telegram Bot Commands registered successfully for Groups and Private chats!")
+    except Exception as e:
+        logger.warning(f"Could not set Telegram bot commands: {e}")
+
     logger.info("🤖 BUNKER Telegram Bot is now polling for updates!")
 
     try:
