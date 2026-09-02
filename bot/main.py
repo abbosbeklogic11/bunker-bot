@@ -3,6 +3,7 @@ BUNKER — Telegram Multiplayer Game Platform
 Application Entry Point (aiogram 3.x + SQLite / Postgres + In-Memory / Redis + APScheduler)
 """
 import asyncio
+import os
 import sys
 import logging
 
