@@ -125,3 +125,7 @@ class UserRepository:
                 "UPDATE users SET is_admin = $1, updated_at = NOW() WHERE id = $2;",
                 1 if is_admin else 0, user_id
             )
+
+    async def get_admin_count(self) -> int:
+        async with self._pool.acquire() as conn:
+            return await conn.fetchval("SELECT COUNT(*) FROM users WHERE is_admin = 1;") or 0

@@ -38,18 +38,45 @@ async def cmd_admin_panel(
     message: Message,
     user: UserModel,
     user_repo: UserRepository,
-    channel_repo: ChannelRepository
+    channel_repo: ChannelRepository,
+    bot: Bot
 ):
     """Admin panel main entry point."""
-    is_admin = (user and user.is_admin) or (message.from_user.id in settings.ADMIN_IDS)
+    user_id = message.from_user.id
+    is_admin = False
+
+    # 1. Config ADMIN_IDS
+    if settings.ADMIN_IDS and user_id in settings.ADMIN_IDS:
+        is_admin = True
+
+    # 2. Database admin flag
     if not is_admin:
-        # Check in DB if user is admin
-        db_user = await user_repo.get_by_id(message.from_user.id)
+        db_user = await user_repo.get_by_id(user_id)
         if db_user and db_user.is_admin:
             is_admin = True
 
+    # 3. If no admins configured in settings and no admins in DB, auto-promote first caller!
+    if not is_admin and not settings.ADMIN_IDS:
+        admin_count = await user_repo.get_admin_count()
+        if admin_count == 0:
+            await user_repo.set_admin(user_id, True)
+            is_admin = True
+
+    # 4. In Group chats: check if user is Group Owner / Administrator
+    if not is_admin and message.chat.type in ("group", "supergroup"):
+        try:
+            member = await bot.get_chat_member(message.chat.id, user_id)
+            if member.status in ("creator", "administrator"):
+                is_admin = True
+        except Exception:
+            pass
+
     if not is_admin:
-        await message.reply("❌ <b>Kechirasiz, siz bot administratori emassiz!</b>", parse_mode="HTML")
+        await message.reply(
+            f"❌ <b>Kechirasiz, siz bot administratori emassiz!</b>\n"
+            f"Sizning Telegram ID raqamingiz: <code>{user_id}</code>",
+            parse_mode="HTML"
+        )
         return
 
     sub_enabled = await channel_repo.is_mandatory_sub_enabled()
@@ -62,6 +89,19 @@ async def cmd_admin_panel(
         f"Quyidagi bo'limlardan birini tanlang:"
     )
     await message.answer(text, reply_markup=kb, parse_mode="HTML")
+
+
+@router.message(Command("setadmin"))
+async def cmd_setadmin(message: Message, user_repo: UserRepository):
+    """Assigns admin role to the user."""
+    user_id = message.from_user.id
+    await user_repo.set_admin(user_id, True)
+    await message.reply(
+        f"✅ <b>Siz muvaffaqiyatli Bot Administratori etib tayinlandingiz!</b>\n\n"
+        f"🆔 Telegram ID: <code>{user_id}</code>\n\n"
+        f"Endi <b>/admin</b> buyrug'ini yozib boshqaruv paneliga kirishingiz mumkin! 👑",
+        parse_mode="HTML"
+    )
 
 
 # ==================== MAIN ADMIN NAVIGATION ====================
